@@ -7,9 +7,30 @@ import re
 import argparse
 import copy
 import csv
+import logging
+
 
 __author__ = 'James F'
 __version__ = '0.0.1'
+
+# create logger with 'spam_application'
+logger = logging.getLogger('Patch_YUV')
+logger.setLevel(logging.DEBUG)
+# create file handler which logs even debug messages
+os.remove('debug.log')
+fh = logging.FileHandler('debug.log')
+fh.setLevel(logging.DEBUG)
+# create console handler with a higher log level
+ch = logging.StreamHandler()
+ch.setLevel(logging.ERROR)
+# create formatter and add it to the handlers
+#formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter('%(message)s')
+fh.setFormatter(formatter)
+ch.setFormatter(formatter)
+# add the handlers to the logger
+logger.addHandler(fh)
+logger.addHandler(ch)
 
 
 # yuv format
@@ -259,7 +280,7 @@ class PNSR:
                 for h_k in range(0, blocksize):
                     startaddr = (h_i * blocksize + h_k) * w + w_j * blocksize
                     for block_k in range(0, blocksize):
-                        mse_array[startaddr + block_k] = int(mse*10)
+                        mse_array[startaddr + block_k] = int(mse*5)
 
 
         # create a mse array and return it
@@ -269,15 +290,17 @@ class PNSR:
 
 
     # patching the watermark
-    def patching_frame(self, frame1_data, frame2_data, w, h, bytes_per_sample, blocksize):
+    def patching_frame(self, frame_data_wt, frame_data_org, w, h, bytes_per_sample, blocksize):
+        log_block_x = 64
+        log_block_y = 55
         # validation, the size of frame_data should dividable by blocksize**2
-        if (len(frame1_data) != len(frame2_data)):
+        if (len(frame_data_wt) != len(frame_data_org)):
             print "the data size is not the same"
             return
 
-        if (len(frame1_data) % (blocksize ** 2) != 0 or len(frame2_data) % (blocksize ** 2) != 0):
-            print "data size: frame1 {0},  frame2 {1} are not divisible by blocksize {2} ".format(len(frame1_data),
-                                                                                                  len(frame2_data),
+        if (len(frame_data_wt) % (blocksize ** 2) != 0 or len(frame_data_org) % (blocksize ** 2) != 0):
+            print "data size: frame1 {0},  frame2 {1} are not divisible by blocksize {2} ".format(len(frame_data_wt),
+                                                                                                  len(frame_data_org),
                                                                                                   blocksize)
             return
 
@@ -288,8 +311,8 @@ class PNSR:
             mse_array = array.array('H')
 
         # only take the y channel
-        mse_array = frame1_data[:w * h]
-        print "the original mse_array size is {0}".format(len(mse_array))
+        mse_array = frame_data_org[:w * h]
+        logger.debug("the original mse_array size is {0}".format(len(mse_array)))
         # left to right and up to bottom, generate a y' with mse
         w_blocks = w / blocksize
         h_blocks = h / blocksize
@@ -297,33 +320,31 @@ class PNSR:
         scaledown_blocks = 0
         for w_j in xrange(0, w_blocks):
             for h_i in xrange(0, h_blocks):
-                block1 = []
-                block2 = []
+                block_wt = []
+                block_org = []
                 for k in range(0, blocksize):
                     startaddr = (h_i * blocksize + k) * w + w_j * blocksize
-                    block1.extend(frame1_data[startaddr: (startaddr + blocksize)])
-                    block2.extend(frame2_data[startaddr: (startaddr + blocksize)])
-                ##################
-                # mse analysis
-                ##################
-                # mse = self.sum_square_err(block1, block2, 0, blocksize**2) / float(blocksize**2)
+                    block_wt.extend(frame_data_wt[startaddr: (startaddr + blocksize)])
+                    block_org.extend(frame_data_org[startaddr: (startaddr + blocksize)])
 
-                # assign the mse to the array
-                # for h_k in range(0, blocksize):
-                #    startaddr = (h_i * blocksize + h_k) * w + w_j * blocksize
-                #    for block_k in range(0, blocksize):
-                #        mse_array[startaddr + block_k] = int(mse*10)
+                #if w_j == log_block_x and h_i == log_block_y:
+                logger.debug("org is ")
+                for i in xrange(0, blocksize*blocksize, blocksize):
+                    logger.debug(block_org[i:i+blocksize])
+                logger.debug("watermarked is")
+                for i in xrange(0,blocksize*blocksize, blocksize):
+                    logger.debug(block_wt[i:i+blocksize])
 
                 #################################
                 # update watermark based on MAX_AD
                 ################################
                 L_Diff = 0
                 H_Diff = 0
-                block_sum = sum(block1)
-                block_average = block_sum / len(block1)
-                average_diversity = sum([abs(i - block_average) for i in block1]) / len(block1)
+                block_sum = sum(block_org)
+                block_average = block_sum*1.0 / len(block_org)
+                average_diversity = sum([abs(i - block_average) for i in block_org]) / len(block_org)
 
-                for (pixel_org, pixel_changed) in zip(block1, block2):
+                for (pixel_org, pixel_changed) in zip(block_wt, block_org):
                     Diff = pixel_changed - pixel_org
                     L_Diff = Diff if Diff < L_Diff else L_Diff
                     H_Diff = Diff if Diff > H_Diff else H_Diff
@@ -336,29 +357,41 @@ class PNSR:
                 # MAX_L_H_AD = 8.0
                 MAX_L_H_AD = average_diversity
                 # should be adjusted by average diversity
+                logger.debug(" block {0} {1}".format(w_j, h_i))
+                logger.debug("[AD, MAX_L_H_AD] is [{0},{1}]".format(AD, MAX_L_H_AD))
+
                 if AD > MAX_L_H_AD:
-                    #print "AD is {0}".format(AD)
+                    # print "original block : \n"
+                    # print block1
+
+                    # print "patched block : \n"
+
                     scaledown_blocks += 1
                     # we need scale down the watermark
                     # assign the mse to the array
                     for h_k in range(0, blocksize):
                         startaddr = (h_i * blocksize + h_k) * w + w_j * blocksize
                         for block_k in range(0, blocksize):
-                            pixel = block1[h_k * blocksize + block_k]
+                            pixel = block_org[h_k * blocksize + block_k]
                             mse_array[startaddr + block_k] = int(
-                                pixel + (block2[h_k * blocksize + block_k] - pixel) * MAX_L_H_AD / AD)
-                            # mse_array[startaddr + block_k] = block2[h_k*blocksize+block_k]
+                                pixel + (block_wt[h_k * blocksize + block_k] - pixel) * (MAX_L_H_AD * 1.0 / AD))
+                            #if w_j == 26 and h_i == 61:
+                             #   print " pixel {0}, change {1}, result {2}".format(pixel, block2[h_k * blocksize + block_k] - pixel, mse_array[startaddr + block_k])
+                        #if w_j == log_block_x and h_i == log_block_y:
+                        logger.debug(mse_array[startaddr: startaddr + blocksize])
+
+# mse_array[startaddr + block_k] = block2[h_k*blocksize+block_k]
                 else:
                     for h_k in range(0, blocksize):
                         startaddr = (h_i * blocksize + h_k) * w + w_j * blocksize
                         block_row = h_k * blocksize
                         for block_k in range(0, blocksize):
-                            mse_array[startaddr + block_k] = block2[block_row + block_k]
+                            mse_array[startaddr + block_k] = block_org[block_row + block_k]
 
         # create a mse array and return it
-        print "the size of mse_array is {0}".format(len(mse_array))
-        print "{0} blocks ({1}%) are scaledowned.".format(scaledown_blocks, scaledown_blocks * 100 / (w_blocks * h_blocks))
-        print "#### end of patching"
+        logger.debug("the size of mse_array is {0}".format(len(mse_array)))
+        logger.debug("{0} blocks ({1}%) are scaledowned.".format(scaledown_blocks, scaledown_blocks * 100 / (w_blocks * h_blocks)))
+        logger.debug("#### end of patching")
         return mse_array
 
 
@@ -403,6 +436,7 @@ def main(argv):
     # print "start test"
     # test_block_mse()
     # return
+
 
     parser = argparse.ArgumentParser(description="""
     PNSR tool for YUV files.
@@ -543,6 +577,7 @@ def main(argv):
         PNSR_func = PNSR()
 
         # James: should not use list since it will involove a sorting
+        # list(YUVs) will put the last added it as the first
 
         YUVs_list = list(YUVs)
         if YUVs_list[0].bytes_per_sample == 1:
@@ -551,7 +586,7 @@ def main(argv):
             mse_y_array = array.array('H')
 
         # mse for unpatched frames
-
+        print "firt yuv is {0} second is {1}".format(YUVs_list[0].YUV_file, YUVs_list[1].YUV_file,)
         mse_y_array = PNSR_func.frame_diff_by_block(YUVs_list[0].YUV_data, YUVs_list[1].YUV_data, opt.width, opt.height,
                                                YUVs_list[0].bytes_per_sample, opt.mse_blocksize)
 
@@ -564,11 +599,15 @@ def main(argv):
                 # mse_y_array.tofile(mse_file)
                 mse_file.write(mse_y_array)
 
+
         #start patching
+
+        print "the watermarked file (YUVs_list[0].YUV_data:{0}".format(YUVs_list[0].YUV_file)
+        print "the orginal file YUVs_list[1].YUV_data: {0}".format(YUVs_list[1].YUV_file)
         mse_y_array = PNSR_func.patching_frame(YUVs_list[0].YUV_data, YUVs_list[1].YUV_data, opt.width, opt.height,
-                                                    YUVs_list[0].bytes_per_sample, opt.mse_blocksize)
+                                                    YUVs_list[1].bytes_per_sample, opt.mse_blocksize)
         if opt.yuv_format == 'yuv422p10le':
-            mse_y_array.extend(YUVs_list[0].YUV_data[opt.width * opt.height:])
+            mse_y_array.extend(YUVs_list[1].YUV_data[opt.width * opt.height:])
             print "the array type of mse_y_array: {0} and the size of mse_y_array is {1}".format(mse_y_array.typecode,
                                                                                                  len(mse_y_array))
             with open("patched_frame.yuv", 'wb') as mse_file:
@@ -577,11 +616,11 @@ def main(argv):
 
             # we generate a mse_pathed.yuv for testing purpose
             patched_yuv = YUV_File("patched_frame.yuv", opt.yuv_format, opt.width, opt.height)
-            patched_mse_y_array = PNSR_func.frame_diff_by_block(YUVs_list[0].YUV_data, patched_yuv.YUV_data, opt.width, opt.height,
-                                YUVs_list[0].bytes_per_sample, opt.mse_blocksize)
+            patched_mse_y_array = PNSR_func.frame_diff_by_block(YUVs_list[0].YUV_data, patched_yuv.YUV_data, opt.width,
+                                                                opt.height, YUVs_list[1].bytes_per_sample, opt.mse_blocksize)
 
 
-            patched_mse_y_array.extend(YUVs_list[0].YUV_data[opt.width * opt.height:])
+            patched_mse_y_array.extend(YUVs_list[1].YUV_data[opt.width * opt.height:])
             print "the array type of mse_y_array: {0} and the size of mse_y_array is {1}".format(mse_y_array.typecode,
                                                                                                  len(mse_y_array))
             with open("patched_mse.yuv", 'wb') as mse_file:
