@@ -10,6 +10,7 @@ import csv
 from YUV import YUVFile
 from vqm import VQM
 import logging
+import ntpath
 
 
 __author__ = 'James F'
@@ -18,7 +19,6 @@ __version__ = '0.0.1'
 ############################
 # logging
 ############################
-
 
 # create logger with 'spam_application'
 logger = logging.getLogger('Patch_YUV')
@@ -310,7 +310,8 @@ def main(argv):
             mse_y_array.extend(YUVs_list[0].YUV_data[opt.width * opt.height:])
             print "the array type of mse_y_array: {0} and the size of mse_y_array is {1}".format(mse_y_array.typecode,
                                                                                                  len(mse_y_array))
-            with open("mse.yuv", 'wb') as mse_file:
+
+            with open(os.path.splitext(YUVs_list[0].YUV_file)[0]+"mse.yuv", 'wb') as mse_file:
                 # mse_y_array.tofile(mse_file)
                 mse_file.write(mse_y_array)
 
@@ -324,18 +325,18 @@ def main(argv):
             mse_y_array.extend(YUVs_list[1].YUV_data[opt.width * opt.height:])
             print "the array type of mse_y_array: {0} and the size of mse_y_array is {1}".format(mse_y_array.typecode,
                                                                                                  len(mse_y_array))
-            with open("patched_frame.yuv", 'wb') as mse_file:
+            with open(os.path.splitext(YUVs_list[0].YUV_file)[0]+"patched_frame.yuv", 'wb') as mse_file:
                 # mse_y_array.tofile(mse_file)
                 mse_file.write(mse_y_array)
 
             # we generate a mse_pathed.yuv for testing purpose
-            patched_yuv = YUVFile("patched_frame.yuv", opt.yuv_format, opt.width, opt.height)
+            patched_yuv = YUVFile(os.path.splitext(YUVs_list[0].YUV_file)[0]+"patched_frame.yuv", opt.yuv_format, opt.width, opt.height)
             patched_mse_y_array = VQM_func.frame_diff_by_block(YUVs_list[0], patched_yuv, opt.mse_blocksize)
 
             patched_mse_y_array.extend(YUVs_list[1].YUV_data[opt.width * opt.height:])
             print "the array type of mse_y_array: {0} and the size of mse_y_array is {1}".format(mse_y_array.typecode,
                                                                                                  len(mse_y_array))
-            with open("patched_mse.yuv", 'wb') as mse_file:
+            with open(os.path.splitext(YUVs_list[0].YUV_file)[0]+"patched_mse.yuv", 'wb') as mse_file:
                 # mse_y_array.tofile(mse_file)
                 mse_file.write(patched_mse_y_array)
 

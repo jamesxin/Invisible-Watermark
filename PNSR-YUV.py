@@ -13,21 +13,31 @@ import logging
 __author__ = 'James F'
 __version__ = '0.0.1'
 
+############################
+##logging
+############################
+
+
 # create logger with 'spam_application'
 logger = logging.getLogger('Patch_YUV')
 logger.setLevel(logging.DEBUG)
+#logger.propagate = False
+
 # create file handler which logs even debug messages
 os.remove('debug.log')
-fh = logging.FileHandler('debug.log')
+fh = logging.FileHandler('debug.log', mode='w')
 fh.setLevel(logging.DEBUG)
+
 # create console handler with a higher log level
 ch = logging.StreamHandler()
 ch.setLevel(logging.ERROR)
+
 # create formatter and add it to the handlers
 #formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 formatter = logging.Formatter('%(message)s')
 fh.setFormatter(formatter)
 ch.setFormatter(formatter)
+
 # add the handlers to the logger
 logger.addHandler(fh)
 logger.addHandler(ch)

@@ -6,7 +6,6 @@ import re
 import argparse
 
 
-
 __author__ = 'James F'
 __version__ = '0.0.1'
 
@@ -30,13 +29,13 @@ class YUVFile:
     # fourcc name,     planar/packed,y,u_x,u_y, interlace/progressive
     #  bytes_per_sample is determined by the file size and format
 
-    YUV_format_dict = {'i420': ['planar', 4, 2, 2, 'progressive'],
-                       'iyuv': ['planar', 4, 2, 2, 'progressive'],
-                       'yv12': ['planar', 4, 2, 2, 'progressive'],
-                       'ayuv': ['planar', 4, 4, 4, 'progressive'],
-                       'yuv444': ['planar', 4, 4, 4, 'progressive'],
-                       'yuv422p10le': ['planar', 4, 2, 4, 'progressive'],
-                       'yuv422': ['planar', 4, 2, 4, 'progressive']
+    YUV_format_dict = {'i420':          ['planar', 4, 2, 2, 'progressive'],
+                       'iyuv':          ['planar', 4, 2, 2, 'progressive'],
+                       'yv12':          ['planar', 4, 2, 2, 'progressive'],
+                       'ayuv':          ['planar', 4, 4, 4, 'progressive'],
+                       'yuv444':        ['planar', 4, 4, 4, 'progressive'],
+                       'yuv422p10le':   ['planar', 4, 2, 4, 'progressive'],
+                       'yuv422':        ['planar', 4, 2, 4, 'progressive']
                        }
 
     def __init__(self, YUV_file, YUV_format, YUV_width, YUV_height):
@@ -63,12 +62,12 @@ class YUVFile:
                                                                                          list(self.supported_formats))
             sys.exit(1)
 
-        coffin = 1.0 + self.YUV_format_dict[YUV_format.lower()][2] * self.YUV_format_dict[YUV_format.lower()][
+        factor = 1.0 + self.YUV_format_dict[YUV_format.lower()][2] * self.YUV_format_dict[YUV_format.lower()][
             3] * 2.0 / (self.YUV_format_dict[YUV_format.lower()][1] ** 2)
 
-        if YUV_width * YUV_height * coffin == self.file_size:
+        if YUV_width * YUV_height * factor == self.file_size:
             self.bytes_per_sample = 1
-        elif YUV_width * YUV_height * coffin * 2 == self.file_size:
+        elif YUV_width * YUV_height * factor * 2 == self.file_size:
             self.bytes_per_sample = 2
         else:
             print "wrong width {0} and height {1} setting or wrong file size {2}.".format(YUV_width, YUV_height,
@@ -110,8 +109,7 @@ class YUVFile:
                     'frame': {y, self.file_size, self.frame_size}}
         # return data, begin, end, size
 
-
-    # parsing the filename
+    # parsing w,h from the filename
     def width_height_from_str(self, s):
         m = re.search(".*[_-](\d+)x(\d+).*", s)
         if not m:
@@ -163,14 +161,15 @@ def main(argv):
     )
 
     # optional args
+
     parser.add_argument(
         '-input_folder',
         action='store',
         dest='input_folder',
         default='',
-        help=' all the files with .YUV extension in the given directory  will be added for comparison. No implemented.'
+        help=' all the files with .YUV extension in the given directory  will be added for comparison.'
     )
-    
+
     parser.add_argument(
         '-YUV_files',
         action='store',
@@ -184,10 +183,12 @@ def main(argv):
 
     # validate the input
     if opt.input_folder == '' and len(opt.YUV_files) == 0:
-        print "empty input. Please at least specify either -input_folder or -YUVfiles."
-        return 1
+        #print "empty input. Please at least specify either -input_folder or -YUVfiles."
+        #return 1
+        print "No input_folder and yuv_files have been entered. Searching current directory for .yuv files."
+        opt.input_folder = '.'
 
-    elif os.path.exists(opt.input_folder):
+    if os.path.exists(opt.input_folder):
         # find all the YUV files under -input_folder and append it to the opt.YUV_files
         print "adding YUV files under {0} to the list.".format(opt.input_folder)
         opt.YUV_files += glob.glob('{0}/*.yuv'.format(opt.input_folder))
@@ -198,10 +199,10 @@ def main(argv):
     # remove duplications
     YUV_file_set = set()
     for item in opt.YUV_files:
-        # if item in YUVfile_set: continue
-        YUV_file_set.add(os.path.normpath(item))
-    
-    # Setup YUV reader
+        if os.path.exists(item):
+            YUV_file_set.add(os.path.normpath(item))
+        else:
+            print "Ignore {0} since it does't exist.".format(item)
     
     YUVs = set()
     for YUV_file in YUV_file_set:
