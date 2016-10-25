@@ -120,9 +120,16 @@ class Patching:
                 # show we only scale down the change on a pixel or entire block?
                 # compute the avg of block. if it is quite even, we should use a lower MAX_AD
                 # Otherwise we should use a higher MAX_AD
-                # MAX_L_H_AD = 8.0
-                MAX_L_H_AD = average_diversity
+                MAX_L_H_AD = average_diversity * 1.16
                 # should be adjusted by average diversity
+                # Max_L_H_AD should be different for the extremely low or high luma
+                # The constant value is from experiments (Digital video Quality)
+                # for now let us assume the range is from 3-660
+                # for the watermarked y < 3, the incr or decr should be e^(2.28*logL/3.09)*L
+                # for the watermarked 660 > y > 3, the incr or decr should be 1.16*L
+                # for the watermarked y > 660, the incr or decr could be e^(1.1*logL/1.5)*L
+
+
                 logger.debug(" block {0} {1}".format(w_j, h_i))
                 logger.debug("[AD, MAX_L_H_AD] is [{0},{1}]".format(AD, MAX_L_H_AD))
 
