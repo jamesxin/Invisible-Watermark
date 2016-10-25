@@ -115,12 +115,18 @@ class Patching:
                     L_Diff = Diff if Diff < L_Diff else L_Diff
                     H_Diff = Diff if Diff > H_Diff else H_Diff
 
-                AD = H_Diff - L_Diff
+                AD = (H_Diff - L_Diff)/2
                 # max AD , 10, AD/max_AD to scale down the changes
                 # show we only scale down the change on a pixel or entire block?
                 # compute the avg of block. if it is quite even, we should use a lower MAX_AD
                 # Otherwise we should use a higher MAX_AD
-                MAX_L_H_AD = average_diversity * 1.16
+                if block_average < 600:
+                    if block_average < 3:
+                        MAX_L_H_AD = math.exp(2.28*math.log(block_average)/3.09)
+                    else:
+                        MAX_L_H_AD = average_diversity * 1.16
+                else:
+                    MAX_L_H_AD = math.exp(1.1*math.log(block_average)/1.5)
                 # should be adjusted by average diversity
                 # Max_L_H_AD should be different for the extremely low or high luma
                 # The constant value is from experiments (Digital video Quality)
@@ -200,30 +206,24 @@ def main(argv):
         required=True,
         help='Height of YUV files.'
     )
-    # optional args
+
     parser.add_argument(
-        '-input_folder',
+        '-wm_file',
         action='store',
-        dest='input_folder',
+        dest='wm_file',
         default='',
-        help=' all the files with .yuv extension in the given directory  will be added for comparison. No implemented.'
+        required=True,
+        help=' watermarked YUV.'
     )
 
+
     parser.add_argument(
-        '-yuvfiles',
+        '-ref_file',
         action='store',
-        dest='yuv_files',
-        default=[],
-        nargs='+',
-        help=' all the YUV files for comparison.'
-    )
-
-    parser.add_argument(
-        '-multireport',
-        action='store_true',
-        dest='multireport',
-        default='False',
-        help='Each YUV file has its own CSV report.'
+        dest='ref_file',
+        default='',
+        required=True,
+        help=' The original reference YUV.'
     )
 
     parser.add_argument(
@@ -232,6 +232,7 @@ def main(argv):
         dest='mse_blocksize',
         type=int,
         default=0,
+        required=True,
         help='''
         When this option is specified  a new yuv file will be generated. It''s y
         channel will be the mse value for each block.'''
@@ -240,111 +241,69 @@ def main(argv):
     opt = parser.parse_args()
 
     # validate the input
-    if opt.input_folder == '' and len(opt.yuv_files) == 0:
+    if opt.ref_file == '' and opt.wm_file == '':
         print "empty input. Please at least specify either -input_folder or -yuvfiles."
         return 1
-    elif os.path.exists(opt.input_folder):
-        # find all the yuv files under -input_folder and append it to the opt.yuv_files
-        print "adding yuv files under {0} to the list.".format(opt.input_folder)
-        opt.yuv_files += glob.glob('{0}/*.yuv'.format(opt.input_folder))
+    elif os.path.exists(opt.ref_file) and os.path.exists(opt.wm_file):
+        print "{0} and {1} are found.".format(opt.ref_file, opt.wm_file)
 
     else:
-        print "input_folder is invalid. Only YUV files listed will be computed."
-
-    # remove duplications
-    yuvfile_set = set()
-    for item in opt.yuv_files:
-        # if item in yuvfile_set: continue
-        yuvfile_set.add(os.path.normpath(item))
+        print "input is invalid."
+        return 1
 
     # Setup YUV reader
 
-    YUVs = set()
-    for yuv_file in yuvfile_set:
-        YUVs.add(YUVFile(yuv_file, opt.yuv_format, opt.width, opt.height))
+    ref_YUV = YUVFile(opt.ref_file, opt.yuv_format, opt.width, opt.height)
+    wm_YUV = YUVFile(opt.wm_file, opt.yuv_format, opt.width, opt.height)
 
     if opt.mse_blocksize == 0:
-
-        # create header of csv
-        # Print csv_header
-        # run PSNR on the YUV_reader,
-
-        csvdata = []
-        csv_header = ['#']
-        for yuv in YUVs:
-
-            csv_header.append(yuv.YUV_file)
-            # add CSV row
-            csvrow = [yuv.YUV_file]
-            for second_yuv in YUVs:
-                if yuv is second_yuv:
-                    psnr_res = 100
-                else:
-                    VQM_func = VQM()
-                    print "{0} vs {1} \n".format(yuv.YUV_file, second_yuv.YUV_file)
-                    mse_res, psnr_res_all, psnr_res = VQM_func.frame_evaluation(yuv.YUV_data, second_yuv.YUV_data)
-                    print "PSNR = {0}".format(psnr_res)
-                csvrow.append(psnr_res)
-
-            print csvrow
-            csvdata.append(csvrow)
-
-        with open('report.csv', 'wb') as csvfile:
-            csvwriter = csv.writer(csvfile, delimiter=',',
-                                   quotechar='|', quoting=csv.QUOTE_MINIMAL)
-            csvwriter.writerow(csv_header)
-            for row in csvdata:
-                csvwriter.writerow(row)
+        print "blocksize has to be larger than 0."
+        return 1
     else:
-        # do the mse_block evaluation
+
         VQM_func = VQM()
 
-        # James: should not use list since it will involove a sorting
-        # list(YUVs) will put the last added it as the first
-
-        YUVs_list = list(YUVs)
-        if YUVs_list[0].bytes_per_sample == 1:
+        if ref_YUV.bytes_per_sample == 1:
             mse_y_array = array.array('B')
-        elif YUVs_list[0].bytes_per_sample == 2:
+        elif ref_YUV.bytes_per_sample == 2:
             mse_y_array = array.array('H')
 
         # mse for unpatched frames
-        print "firt yuv is {0} second is {1}".format(YUVs_list[0].YUV_file, YUVs_list[1].YUV_file,)
-        mse_y_array = VQM_func.frame_diff_by_block(YUVs_list[0], YUVs_list[1], opt.mse_blocksize)
+        print "ref yuv is {0},  wm_yuv is {1}".format(ref_YUV, wm_YUV)
+        mse_y_array = VQM_func.frame_diff_by_block(ref_YUV, wm_YUV, opt.mse_blocksize)
 
 
         if opt.yuv_format == 'yuv422p10le':
-            mse_y_array.extend(YUVs_list[0].YUV_data[opt.width * opt.height:])
+            mse_y_array.extend(ref_YUV.YUV_data[opt.width * opt.height:])
             print "the array type of mse_y_array: {0} and the size of mse_y_array is {1}".format(mse_y_array.typecode,
                                                                                                  len(mse_y_array))
 
-            with open(os.path.splitext(YUVs_list[0].YUV_file)[0]+"mse.yuv", 'wb') as mse_file:
+            with open(os.path.splitext(ref_YUV.YUV_file)[0]+"_mse.yuv", 'wb') as mse_file:
                 # mse_y_array.tofile(mse_file)
                 mse_file.write(mse_y_array)
 
+        #########################
+        # start patching
+        #########################
 
-        #start patching
-
-        print "the watermarked file (YUVs_list[0].YUV_data:{0}".format(YUVs_list[0].YUV_file)
-        print "the orginal file YUVs_list[1].YUV_data: {0}".format(YUVs_list[1].YUV_file)
-        mse_y_array = Patching.patching_frame(YUVs_list[0], YUVs_list[1], opt.mse_blocksize)
+        #print "the watermarked file (YUVs_list[0].YUV_data:{0}".format(YUVs_list[0].YUV_file)
+        #print "the orginal file YUVs_list[1].YUV_data: {0}".format(YUVs_list[1].YUV_file)
+        mse_y_array = Patching.patching_frame(wm_YUV, ref_YUV, opt.mse_blocksize)
         if opt.yuv_format == 'yuv422p10le':
-            mse_y_array.extend(YUVs_list[1].YUV_data[opt.width * opt.height:])
+            mse_y_array.extend(ref_YUV.YUV_data[opt.width * opt.height:])
             print "the array type of mse_y_array: {0} and the size of mse_y_array is {1}".format(mse_y_array.typecode,
                                                                                                  len(mse_y_array))
-            with open(os.path.splitext(YUVs_list[0].YUV_file)[0]+"patched_frame.yuv", 'wb') as mse_file:
-                # mse_y_array.tofile(mse_file)
+            with open(os.path.splitext(wm_YUV.YUV_file)[0]+"_patched_frame.yuv", 'wb') as mse_file:
                 mse_file.write(mse_y_array)
 
             # we generate a mse_pathed.yuv for testing purpose
-            patched_yuv = YUVFile(os.path.splitext(YUVs_list[0].YUV_file)[0]+"patched_frame.yuv", opt.yuv_format, opt.width, opt.height)
-            patched_mse_y_array = VQM_func.frame_diff_by_block(YUVs_list[0], patched_yuv, opt.mse_blocksize)
+            patched_yuv = YUVFile(os.path.splitext(wm_YUV.YUV_file)[0]+"_patched_frame.yuv", opt.yuv_format, opt.width, opt.height)
+            patched_mse_y_array = VQM_func.frame_diff_by_block(wm_YUV, patched_yuv, opt.mse_blocksize)
 
-            patched_mse_y_array.extend(YUVs_list[1].YUV_data[opt.width * opt.height:])
+            patched_mse_y_array.extend(wm_YUV.YUV_data[opt.width * opt.height:])
             print "the array type of mse_y_array: {0} and the size of mse_y_array is {1}".format(mse_y_array.typecode,
                                                                                                  len(mse_y_array))
-            with open(os.path.splitext(YUVs_list[0].YUV_file)[0]+"patched_mse.yuv", 'wb') as mse_file:
-                # mse_y_array.tofile(mse_file)
+            with open(os.path.splitext(wm_YUV.YUV_file)[0]+"patched_mse.yuv", 'wb') as mse_file:
                 mse_file.write(patched_mse_y_array)
 
 
