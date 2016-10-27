@@ -6,7 +6,7 @@ import math
 import argparse
 import csv
 from YUV import YUVFile
-
+import logging
 
 __author__ = 'James F'
 __version__ = '0.0.1'
@@ -18,8 +18,8 @@ class VQM:
 
     """
 
-    def __init__(self):
-        pass
+    def __init__(self, logger):
+        self.logger = logger
 
     def mean(self, seq):
         if len(seq) == 0:
@@ -35,15 +35,13 @@ class VQM:
     #
     def sum_square_err(self, data1, data2):
         if len(data1) != len(data2):
-            print "Data in different size !"
-            sys.exit(0)
+            self.logger.error("Data in different size !")
+            sys.exit(1)
         else:
             return sum((a - b) * (a - b) for a, b in zip(data1[:], data2[:]))
 
-
     def MSE(self, data1, data2):
         return self.sum_square_err(data1, data2) / len(data1)
-
 
     def PSNR(self, mse):
         log10 = math.log10
@@ -61,7 +59,7 @@ class VQM:
         frame_size = yuv1.frame_size
 
         # print "data size: %d, w*h=%d" % (end_pos - begin_pos, luma_size)
-        print "evaluating mse.."
+        self.logger.info( "evaluating mse..")
 
         # start of Y U V
         y = begin_pos
@@ -96,16 +94,17 @@ class VQM:
     # compute the mse for two same size data
     def frame_diff_by_block(self, yuv1, yuv2, block_size):
 
+        self.logger.info("#### Start to compute the MSE of blocks.")
         # validation, the size of frame_data should dividable by blocksize**2
         if yuv1.file_size != yuv2.file_size:
-            print "the data size is not the same"
-            return
+            self.logger.error ("the data size is not the same")
+            sys.exit(1)
 
         if yuv1.file_size % (block_size ** 2) != 0 or yuv2.file_size % (block_size ** 2) != 0:
-            print "data size: frame1 {0},  frame2 {1} are not divisible by blocksize {2} ".format(yuv1.file_size,
+            self.logger.error("data size: frame1 {0},  frame2 {1} are not divisible by blocksize {2} ".format(yuv1.file_size,
                                                                                                   yuv2.file_size,
-                                                                                                  block_size)
-            return
+                                                                                                  block_size))
+            sys.exit(1)
 
         # create the output mse array
         if yuv1.bytes_per_sample == 1:
@@ -115,7 +114,7 @@ class VQM:
 
         # only take the y channel
         mse_array = yuv1.YUV_data[:yuv1.luma_size]
-        print "the original mse_array size is {0}".format(len(mse_array))
+        self.logger.debug("the original mse_array size is {0}".format(len(mse_array)))
         # left to right and up to bottom, generate a y' with mse
         w = yuv1.YUV_width
         h = yuv1.YUV_height
@@ -134,7 +133,6 @@ class VQM:
                 # mse analysis
                 ##################
                 mse = self.MSE(block1, block2)
-
                 # assign the mse to the array
                 for h_k in range(0, block_size):
                     startaddr = (h_i * block_size + h_k) * w + w_j * block_size
@@ -142,8 +140,8 @@ class VQM:
                         mse_array[startaddr + block_k] = int(mse*5)
 
         # create a mse array and return it
-        print "the size of mse_array is {0}".format(len(mse_array))
-        print "#### end of frame_diff_by_block"
+        self.logger.debug("the size of mse_array is {0}".format(len(mse_array)))
+        self.logger.info("#### end of frame_diff_by_block")
         return mse_array
 
 
@@ -151,6 +149,39 @@ def main(argv):
     # print "start test"
     # test_block_mse()
     # return
+    ############################
+    # logging
+    ############################
+    # CRITICAL	50
+    # ERROR	40
+    # WARNING	30
+    # INFO	20
+    # DEBUG	10
+    # NOTSET	0
+    # create logger with 'spam_application'
+    logger = logging.getLogger('Patch_YUV')
+    logger.setLevel(logging.DEBUG)
+    # logger.propagate = False
+
+    # create file handler which logs even debug messages
+    fh = logging.FileHandler('debug.log', mode='w')
+    fh.setLevel(logging.DEBUG)
+    # fh.setLevel(logging.WARNING)
+
+
+    # create console handler with a higher log level
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+
+    # create formatter and add it to the handlers
+    # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter('%(message)s')
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+
+    # add the handlers to the logger
+    logger.addHandler(fh)
+    logger.addHandler(ch)
 
     parser = argparse.ArgumentParser(description="""
     visual quality metrix tool for YUV files.
@@ -270,7 +301,7 @@ def main(argv):
                 if yuv is second_yuv:
                     psnr_res = 100
                 else:
-                    VQM_func = VQM()
+                    VQM_func = VQM(logger)
                     print "{0} vs {1} \n".format(yuv.YUV_file, second_yuv.YUV_file)
                     mse_res, psnr_res_all, psnr_res = VQM_func.frame_evaluation(yuv.YUV_data, second_yuv.YUV_data)
                     print "PSNR = {0}".format(psnr_res)
@@ -287,7 +318,7 @@ def main(argv):
                 csvwriter.writerow(row)
     else:
         # do the mse_block evaluation
-        VQM_func = VQM()
+        VQM_func = VQM(logger)
 
         # James: should not use list since it will involove a sorting
         # list(YUVs) will put the last added it as the first

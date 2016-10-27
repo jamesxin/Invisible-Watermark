@@ -4,7 +4,7 @@ import os
 import glob
 import re
 import argparse
-
+import logging
 
 __author__ = 'James F'
 __version__ = '0.0.1'
@@ -38,7 +38,7 @@ class YUVFile:
                        'yuv422':        ['planar', 4, 2, 4, 'progressive']
                        }
 
-    def __init__(self, YUV_file, YUV_format, YUV_width, YUV_height):
+    def __init__(self, YUV_file, YUV_format, YUV_width, YUV_height, yuv_logger):
         self.supported_formats = {'yv12', 'iyuv', 'i420', 'ayuv', 'yuv444', 'yuv422', 'yuv422p10le'}
 
         # the YUV file
@@ -53,13 +53,13 @@ class YUVFile:
         self.begin = 0
         self.file_size = os.path.getsize(YUV_file)
         self.end = self.file_size
-
+        self.logger = yuv_logger
         # verify the format is supported
         # bits is 8,10,12,14,16, They all use 2 bytes
 
         if self.YUV_format.lower() not in self.supported_formats:
-            print "{0} is not supported. Only following types {1} are supported.".format(YUV_format,
-                                                                                         list(self.supported_formats))
+            self.logger.error("{0} is not supported. Only following types {1} are supported.".format(YUV_format,
+                                                                                         list(self.supported_formats)))
             sys.exit(1)
 
         factor = 1.0 + self.YUV_format_dict[YUV_format.lower()][2] * self.YUV_format_dict[YUV_format.lower()][
@@ -70,8 +70,8 @@ class YUVFile:
         elif YUV_width * YUV_height * factor * 2 == self.file_size:
             self.bytes_per_sample = 2
         else:
-            print "wrong width {0} and height {1} setting or wrong file size {2}.".format(YUV_width, YUV_height,
-                                                                                          self.file_size)
+            self.logger.error("wrong width {0} and height {1} setting or wrong file size {2}.".format(YUV_width, YUV_height,
+                                                                                          self.file_size))
             sys.exit(1)
 
         # YUV_data
@@ -86,7 +86,7 @@ class YUVFile:
         # read entire file
         with open(YUV_file, 'rb') as content_file:
             self.YUV_data.fromfile(content_file, self.file_size / self.bytes_per_sample)
-        print "the YUV_data size is {0}".format(len(self.YUV_data))
+        self.logger.debug("the YUV_data size is {0}".format(len(self.YUV_data)))
 
         self.luma_size = YUV_width * YUV_height
         chroma_ratio = 1.0 * self.YUV_format_dict[YUV_format.lower()][2] / self.YUV_format_dict[YUV_format.lower()][1] * \
@@ -94,8 +94,8 @@ class YUVFile:
         self.chroma_size = self.luma_size * chroma_ratio
         self.frame_size = self.luma_size + self.chroma_size*2
 
-        print "data size: %d, luma=%d, chroma=%d, frame=%d" % (self.file_size,
-                                                               self.luma_size, self.chroma_size, self.frame_size)
+        self.logger.info("data size: %d, luma=%d, chroma=%d, frame=%d" % (self.file_size,
+                                                               self.luma_size, self.chroma_size, self.frame_size))
         # start of Y U V
         y = 0
         u = y + self.luma_size
@@ -121,6 +121,40 @@ class YUVFile:
 
 
 def main(argv):
+    ############################
+    # logging
+    ############################
+    # CRITICAL	50
+    # ERROR	40
+    # WARNING	30
+    # INFO	20
+    # DEBUG	10
+    # NOTSET	0
+    # create logger with 'spam_application'
+    logger = logging.getLogger('Patch_YUV')
+    logger.setLevel(logging.DEBUG)
+    # logger.propagate = False
+
+    # create file handler which logs even debug messages
+    fh = logging.FileHandler('debug.log', mode='w')
+    fh.setLevel(logging.DEBUG)
+    # fh.setLevel(logging.WARNING)
+
+
+    # create console handler with a higher log level
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+
+    # create formatter and add it to the handlers
+    # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter('%(message)s')
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+
+    # add the handlers to the logger
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+
     parser = argparse.ArgumentParser(description="""
     YUV lib, the byte_per_sample will be autometically determined by file size, YUV format, width and height.
     """)
@@ -206,7 +240,7 @@ def main(argv):
     
     YUVs = set()
     for YUV_file in YUV_file_set:
-        YUVs.add(YUVFile(YUV_file, opt.YUV_format, opt.width, opt.height))
+        YUVs.add(YUVFile(YUV_file, opt.YUV_format, opt.width, opt.height,logger))
 
 if __name__ == '__main__':
     main(sys.argv)
