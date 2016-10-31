@@ -35,11 +35,12 @@ class YUVFile:
                        'ayuv':          ['planar', 4, 4, 4, 'progressive'],
                        'yuv444':        ['planar', 4, 4, 4, 'progressive'],
                        'yuv422p10le':   ['planar', 4, 2, 4, 'progressive'],
+                       'yuv420p10le':   ['planar', 4, 2, 2, 'progressive'],
                        'yuv422':        ['planar', 4, 2, 4, 'progressive']
                        }
 
     def __init__(self, YUV_file, YUV_format, YUV_width, YUV_height, yuv_logger):
-        self.supported_formats = {'yv12', 'iyuv', 'i420', 'ayuv', 'yuv444', 'yuv422', 'yuv422p10le'}
+        self.supported_formats = {'yv12', 'iyuv', 'i420', 'ayuv', 'yuv444', 'yuv422', 'yuv422p10le', 'yuv420p10le'}
 
         # the YUV file
         self.YUV_file = YUV_file

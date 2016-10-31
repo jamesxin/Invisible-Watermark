@@ -9,9 +9,10 @@ import copy
 import csv
 from YUV import YUVFile
 from vqm import VQM
+from DBScan import DBSCAN
 import logging
 import ntpath
-
+from clustering import Clustering, Cluster
 
 __author__ = 'James F'
 __version__ = '0.0.1'
@@ -57,7 +58,6 @@ class Patching:
 
     def __init__(self):
         pass
-
     # patching the watermark
     @staticmethod
     def patching_frame(yuv_wt, yuv_org, blocksize):
@@ -98,10 +98,16 @@ class Patching:
             for h_i in xrange(0, h_blocks):
                 block_wt = []
                 block_org = []
+                factor = 1
+                num_clusters = 0
+                # the watermarked added to the frame
+                block_noisy = []
                 for k in range(0, blocksize):
                     startaddr = (h_i * blocksize + k) * w + w_j * blocksize
                     block_wt.extend(yuv_wt.YUV_data[startaddr: (startaddr + blocksize)])
                     block_org.extend(yuv_org.YUV_data[startaddr: (startaddr + blocksize)])
+
+                block_noisy = [pixel_wt - pixel_org for pixel_wt, pixel_org in zip(block_wt, block_org)]
 
                 logger.debug("org is ")
                 for i in xrange(0, blocksize*blocksize, blocksize):
@@ -126,18 +132,22 @@ class Patching:
 
                 block_sum = sum(block_org)
                 block_average = block_sum*1.0 / len(block_org)
-                average_diversity = sum([abs(pixel_i - block_average) for pixel_i in block_org]) / len(block_org)
+                # average_diversity = sum([abs(pixel_i - block_average) for pixel_i in block_org]) / len(block_org)
 
+                block_SD_wt = VQM.SD(block_wt)
+                block_SD_org = VQM.SD(block_org)
+                block_SD_noisy = VQM.SD(block_noisy)
                 # since we use average_diversity
 
                 for (pixel_changed, pixel_org) in zip(block_wt, block_org):
-                    Diff = pixel_changed - pixel_org
-                    L_Diff = Diff if Diff < L_Diff else L_Diff
-                    H_Diff = Diff if Diff > H_Diff else H_Diff
+                #    Diff = pixel_changed - pixel_org
+                #    L_Diff = Diff if Diff < L_Diff else L_Diff
+                #    H_Diff = Diff if Diff > H_Diff else H_Diff
                     pixel_luma_min = pixel_org if pixel_org < pixel_luma_min else pixel_luma_min
                     pixel_luma_max = pixel_org if pixel_org > pixel_luma_max else pixel_luma_max
 
-                AD = (H_Diff - L_Diff)*1.0/2
+                # AD = (H_Diff - L_Diff)*1.0/2
+
                 # AD/max_AD to scale down the changes
                 # show we only scale down the change on a pixel or entire block?
                 # compute the avg of block. if it is quite even, we should use a lower MAX_AD
@@ -148,7 +158,7 @@ class Patching:
                 luma_low_boundary = 60
                 luma_high_boundary = 600
 
-                average_diversity = 2 if average_diversity < 2 else average_diversity
+                # average_diversity = 2 if average_diversity < 2 else average_diversity
 
                 # exception: for some block, even they have a high diversity however, the data are sparse distributed
                 # for example, in a range of [0, 100], data are all in the 0, or 100. Such block is not good for hiding data
@@ -156,13 +166,17 @@ class Patching:
 
                 if block_average < luma_high_boundary:
                     if block_average < luma_low_boundary:
-                         # MAX_L_H_AD = 0.1*math.exp(2.28 * math.log(block_average)/3.09)
-                         MAX_L_H_AD = average_diversity * 1.15
+                #         # MAX_L_H_AD = 0.1*math.exp(2.28 * math.log(block_average)/3.09)
+                         MAX_L_H_AD = block_average * 0.025
+
                     else:
-                        MAX_L_H_AD = average_diversity * 0.25
+                        MAX_L_H_AD = block_average * 0.0025
                 else:
-                     #MAX_L_H_AD = 0.1*math.exp(1.1*math.log(block_average)/1.5)
-                    MAX_L_H_AD = average_diversity * 1.15
+                #     #MAX_L_H_AD = 0.1*math.exp(1.1*math.log(block_average)/1.5)
+                    MAX_L_H_AD = block_average * 0.025
+
+
+
                 # should be adjusted by average diversity
                 # Max_L_H_AD should be different for the extremely low or high luma
                 # The constant value is from experiments (Digital video Quality)
@@ -179,35 +193,59 @@ class Patching:
                 # MAX_L_H_D should not cause the luma < luma_min or over luma_max
 
                 logger.debug(" block {0} {1}".format(w_j, h_i))
-                logger.debug("[AD between WM and ref, MAX_L_H_AD, block_average, average_diversity] is [{0},{1}, {2}, {3}]".format(AD, MAX_L_H_AD, block_average, average_diversity))
+                #logger.debug("[AD between WM and ref, MAX_L_H_AD, block_average, average_diversity] is [{0},{1}, {2}, {3}]".format(AD, MAX_L_H_AD, block_average, average_diversity))
+                logger.debug(
+                    "[WM_SD, org_SD, noisy_SD, MAX_L_H_AD, block_average,] is [{0},{1}, {2}, {3}, {4}]".format(
+                        block_SD_wt,block_SD_org, block_SD_noisy, MAX_L_H_AD, block_average))
+                # MAX_L_H_AD_1 = (pixel_luma_min -luma_min) if (pixel_luma_min - MAX_L_H_AD) < luma_min else MAX_L_H_AD
+                # MAX_L_H_AD_2 = (luma_max -pixel_luma_max) if (pixel_luma_max + MAX_L_H_AD) > luma_max else MAX_L_H_AD
 
-                MAX_L_H_AD_1 = (pixel_luma_min -luma_min) if (pixel_luma_min - MAX_L_H_AD) < luma_min else MAX_L_H_AD
-                MAX_L_H_AD_2 = (luma_max -pixel_luma_max) if (pixel_luma_max + MAX_L_H_AD) > luma_max else MAX_L_H_AD
-
-                MAX_L_H_AD = MAX_L_H_AD_1 if MAX_L_H_AD_1 < MAX_L_H_AD_2 else MAX_L_H_AD_2
+                # MAX_L_H_AD = MAX_L_H_AD_1 if MAX_L_H_AD_1 < MAX_L_H_AD_2 else MAX_L_H_AD_2
 
 
 
-                if AD > MAX_L_H_AD:
+                 # num_groups = DBScan()
+                if block_SD_org < 1:
+                    block_SD_org = 1
+                if block_SD_noisy < 1:
+                    block_SD_noisy = 1
+                if block_SD_org < 10:
+                    # logger.debug("[{0}, {1}] in the safe range.".format(w_j, h_i))
                     scaledown_blocks += 1
-                elif AD == MAX_L_H_AD:
-                    normal_blocks += 1
+                    factor = 1 / block_SD_noisy
                 else:
-                    scaleup_blocks += 1
+                    # in most case, the SD_wt should large than SD_org.
+                    # if SD_wt < SD_org, it shows the org data are all located at both end of range.
+                    # if org data is distribution in the block is normal
+                    # current this is most difficult case
+                    # we may able to increase this part
+                    # if block_SD_noisy
+                    # we scaledown blocks whose block_SD_org is very high
+                    block_org_2d = []
+                    for i in xrange(0, len(block_org), 16):
+                        block_org_2d.append(block_org[i:i+16])
+                    cluster_func = Clustering(block_org_2d, 4)
+                    cluster_func.start()
+                    num_clusters = len(cluster_func.clusters)
+                    if num_clusters < 28:
+                        factor = 1 / block_SD_noisy
+                        scaledown_blocks += 1
+                    else:
+                        factor = 1.05
+                        scaleup_blocks += 1
                 #if AD is 0. The watermarked frame did not change anything
 
-                factor = 1
-                if AD > MAX_L_H_AD:
-                    factor = MAX_L_H_AD * 1.0 / AD
-                elif AD == 0:
-                    factor = 0
-                else:
-                    factor = 1.01
+
+                #if AD > MAX_L_H_AD:
+                #    factor = MAX_L_H_AD * 1.0 / AD
+                #elif AD == 0:
+                #    factor = 0
+                #else:
+                #    factor = 1.01
                     # we need scale down the watermark
                     # assign the mse to the array
 
-                logger.debug("normalized MAX_L_H_AD is {0} and factor is {1}".format(MAX_L_H_AD, factor))
-
+                logger.debug("normalized MAX_L_H_AD is {0} and factor is {1}, number of clusters is {2}".format(MAX_L_H_AD, factor, num_clusters))
 
                 for h_k in range(0, blocksize):
                     startaddr = (h_i * blocksize + h_k) * w + w_j * blocksize
@@ -340,7 +378,7 @@ def main(argv):
         logger.info("#### MSE between ref_yuv and wm_yuv.")
         mse_y_array = VQM_func.frame_diff_by_block(ref_YUV, wm_YUV, opt.mse_blocksize)
 
-        if opt.yuv_format == 'yuv422p10le':
+        if opt.yuv_format == 'yuv422p10le' or opt.yuv_format == 'yuv420p10le':
             mse_y_array.extend(ref_YUV.YUV_data[opt.width * opt.height:])
             # print "the array type of mse_y_array: {0} and the size of mse_y_array is {1}".format(mse_y_array.typecode,
             #                                                                                     len(mse_y_array))
@@ -356,7 +394,7 @@ def main(argv):
         # print "the watermarked file (YUVs_list[0].YUV_data:{0}".format(YUVs_list[0].YUV_file)
         # print "the orginal file YUVs_list[1].YUV_data: {0}".format(YUVs_list[1].YUV_file)
         mse_y_array = Patching.patching_frame(wm_YUV, ref_YUV, opt.mse_blocksize)
-        if opt.yuv_format == 'yuv422p10le':
+        if opt.yuv_format == 'yuv422p10le' or opt.yuv_format == 'yuv420p10le':
             mse_y_array.extend(ref_YUV.YUV_data[opt.width * opt.height:])
             # print "the array type of mse_y_array: {0} and the size of mse_y_array is {1}".format(mse_y_array.typecode,
             # len(mse_y_array))

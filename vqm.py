@@ -8,6 +8,7 @@ import csv
 from YUV import YUVFile
 import logging
 
+
 __author__ = 'James F'
 __version__ = '0.0.1'
 
@@ -48,6 +49,17 @@ class VQM:
         if mse == 0:
             mse = sys.float_info.min
         return 10.0 * log10(float(256 * 256) / float(mse))
+
+    # Standard Deviation
+    # data is an one dimension array
+    @staticmethod
+    def SD(data):
+        N = len(data)
+        if N == 0:
+            return 0.0
+        data_mean = sum(data) / float(N)
+        ret = math.sqrt(sum((x-data_mean)**2 for x in data)/(N-1))
+        return ret
 
     # apply the quality metrix on two yuv files
     # it takes two YUV files as input
